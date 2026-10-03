@@ -32,25 +32,25 @@ size_t platformio_transport_read(
 // WiFi AP
 //=========================
 
-const char *ap_ssid = "ESP32_microROS";
-const char *ap_password = "12345678password";
+const char *ap_ssid = "esteira";
+const char *ap_password = "12345678";
 
 IPAddress agent_ip(192,168,4,2);
 size_t agent_port = 8888;
 
-//=========================
-// Motor
-//=========================
+// //=========================
+// // Motor
+// //=========================
 
-#define IN1 13
-#define IN2 12
-#define IN3 27
-#define IN4 26
-#define ENA 14
+// #define IN1 13
+// #define IN2 12
+// #define IN3 27
+// #define IN4 26
+// #define ENA 14
 
-#define PWM_CHANNEL     0
-#define PWM_FREQ        5000
-#define PWM_RESOLUTION  8
+// #define PWM_CHANNEL     0
+// #define PWM_FREQ        5000
+// #define PWM_RESOLUTION  8
 
 int velocidade = 150;
 
@@ -63,15 +63,15 @@ rclc_support_t support;
 rcl_node_t node;
 rclc_executor_t executor;
 
-rcl_timer_t timer_motor;
+rcl_timer_t timer_states;
 rcl_timer_t timer_vel;
 // rcl_timer_t timer_posicao;
 
-rcl_publisher_t pub_motor;
+rcl_publisher_t pub_states;
 rcl_publisher_t pub_vel;
 // rcl_publisher_t pub_posicao;
 
-std_msgs__msg__Int32 msg_motor;
+std_msgs__msg__Int32 msg_states;
 std_msgs__msg__Int32 msg_vel;
 // std_msgs__msg__Int32 msg_posicao;
 
@@ -138,7 +138,7 @@ void pararMotores()
 
 //=========================
 
-enum EstadoMotor
+enum EstadoEsteira
 {
     FRENTE,
     PARADO1,
@@ -146,7 +146,7 @@ enum EstadoMotor
     PARADO2
 };
 
-EstadoMotor estado = FRENTE;
+EstadoEsteira estado = FRENTE;
 
 // unsigned long ultimaTroca = 0;
 
@@ -154,7 +154,7 @@ EstadoMotor estado = FRENTE;
 // Timer motor
 //=========================
 
-void timer_motor_callback(rcl_timer_t *timer, int64_t last_call_time)
+void timer_states_callback(rcl_timer_t *timer, int64_t last_call_time)
 {
     RCLC_UNUSED(last_call_time);
 
@@ -168,7 +168,7 @@ void timer_motor_callback(rcl_timer_t *timer, int64_t last_call_time)
         case FRENTE:
 
             moverFrente();
-            msg_motor.data = 1;
+            msg_states.data = 1;
 
             // if(agora-ultimaTroca>2000)
             // {
@@ -181,7 +181,7 @@ void timer_motor_callback(rcl_timer_t *timer, int64_t last_call_time)
         case PARADO1:
 
             pararMotores();
-            msg_motor.data = 0;
+            msg_states.data = 0;
 
             // if(agora-ultimaTroca>1000)
             // {
@@ -194,7 +194,7 @@ void timer_motor_callback(rcl_timer_t *timer, int64_t last_call_time)
         case TRAS:
 
             moverTras();
-            msg_motor.data = -1;
+            msg_states.data = -1;
 
             // if(agora-ultimaTroca>2000)
             // {
@@ -207,7 +207,7 @@ void timer_motor_callback(rcl_timer_t *timer, int64_t last_call_time)
         case PARADO2:
 
             pararMotores();
-            msg_motor.data = 0;
+            msg_states.data = 0;
 
             // if(agora-ultimaTroca>1000)
             // {
@@ -218,7 +218,7 @@ void timer_motor_callback(rcl_timer_t *timer, int64_t last_call_time)
         break;
     }
 
-    RCSOFTCHECK(rcl_publish(&pub_motor,&msg_motor,NULL));
+    RCSOFTCHECK(rcl_publish(&pub_states,&msg_states,NULL));
 }
 
 //=========================
@@ -304,7 +304,7 @@ void setup()
         &support));
 
     RCCHECK(rclc_publisher_init_default(
-        &pub_motor,
+        &pub_states,
         &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,Int32),
         "esp32/motor_state"));
@@ -316,10 +316,10 @@ void setup()
         "esp32/robot_vel"));
 
     RCCHECK(rclc_timer_init_default(
-        &timer_motor,
+        &timer_states,
         &support,
         RCL_MS_TO_NS(100),
-        timer_motor_callback));
+        timer_states_callback));
 
     RCCHECK(rclc_timer_init_default(
         &timer_vel,
@@ -335,13 +335,13 @@ void setup()
 
     RCCHECK(rclc_executor_add_timer(
         &executor,
-        &timer_motor));
+        &timer_states));
 
     RCCHECK(rclc_executor_add_timer(
         &executor,
         &timer_vel));
 
-    msg_motor.data = 0;
+    msg_.data = 0;
     msg_vel.data = velocidade;
 
     // ultimaTroca = millis();

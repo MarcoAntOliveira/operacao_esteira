@@ -4,13 +4,17 @@ Este repositorio visa impementar a operação a esteira usando uma maquina de es
 
 
 ```mermaid
-    stateDiagram-v2
-    [*] --> detecta_peca
+   stateDiagram-v2
+    [*] --> AguardandoPeca
 
-    detecta_peca --> inicia_esteira:sim(sensor no inicio da esteira)
-    inicia_esteira --> sensor_meio : sim
-    sensor_meio --> sensor_fim : sim
-    sensor_fim --> aciona_ur:sim
-    aciona_ur --> detecta_peca
+    AguardandoPeca --> AguardandoPeca: Nao detectada
+    AguardandoPeca --> MovendoAteMeio: Sensor Inicio (Sim)
+
+    MovendoAteMeio --> MovendoAteFim: Sensor Meio (Sim)
+
+    MovendoAteFim --> ParaEsteira: Sensor Fim (Sim)
+
+    ParaEsteira --> ProcessandoUR: Esteira Parada
     
+    ProcessandoUR --> AguardandoPeca: UR Concluido / Fim de Ciclo 
 ```
