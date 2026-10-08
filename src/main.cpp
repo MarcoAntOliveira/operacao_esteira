@@ -74,6 +74,10 @@ rcl_publisher_t pub_vel;
 std_msgs__msg__Int32 msg_states;
 std_msgs__msg__Int32 msg_vel;
 // std_msgs__msg__Int32 msg_posicao;
+// subscriber
+rcl_subscription_t subscriber;
+
+rclc_executor_t executor_sub;
 
 //=========================
 
@@ -103,50 +107,20 @@ void error_loop()
 // Motor
 //=========================
 
-void moverFrente()
-{
-    digitalWrite(IN1,HIGH);
-    digitalWrite(IN2,LOW);
 
-    digitalWrite(IN3,HIGH);
-    digitalWrite(IN4,LOW);
-
-    ledcWrite(PWM_CHANNEL, velocidade);
-}
-
-void moverTras()
-{
-    digitalWrite(IN1,LOW);
-    digitalWrite(IN2,HIGH);
-
-    digitalWrite(IN3,LOW);
-    digitalWrite(IN4,HIGH);
-
-    ledcWrite(PWM_CHANNEL, velocidade);
-}
-
-void pararMotores()
-{
-    digitalWrite(IN1,LOW);
-    digitalWrite(IN2,LOW);
-
-    digitalWrite(IN3,LOW);
-    digitalWrite(IN4,LOW);
-
-    ledcWrite(PWM_CHANNEL,0);
-}
 
 //=========================
 
 enum EstadoEsteira
 {
-    FRENTE,
-    PARADO1,
-    TRAS,
-    PARADO2
+    aguardandoPeca,
+    movendoMeio,
+    movendoFim,
+    paraEsteira,
+    processaUr
 };
 
-EstadoEsteira estado = FRENTE;
+EstadoEsteira estado = aguardandoPeca;
 
 // unsigned long ultimaTroca = 0;
 
@@ -154,73 +128,43 @@ EstadoEsteira estado = FRENTE;
 // Timer motor
 //=========================
 
-void timer_states_callback(rcl_timer_t *timer, int64_t last_call_time)
+std_msgs__msg__Int32 msg_sub;   // buffer onde o executor escreve a mensagem recebida
+
+void subscription_callback(const void *msgin)
 {
-    RCLC_UNUSED(last_call_time);
-
-    if(timer == NULL)
-        return;
-
-    // unsigned long agora = millis();
+    const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msgin;
 
     switch(estado)
     {
-        case FRENTE:
-
-            moverFrente();
-            msg_states.data = 1;
-
-            // if(agora-ultimaTroca>2000)
-            // {
-            //     estado=PARADO1;
-            //     ultimaTroca=agora;
-            // }
-
-        break;
-
-        case PARADO1:
-
-            pararMotores();
-            msg_states.data = 0;
-
-            // if(agora-ultimaTroca>1000)
-            // {
-            //     estado=TRAS;
-            //     ultimaTroca=agora;
-            // }
-
-        break;
-
-        case TRAS:
-
-            moverTras();
-            msg_states.data = -1;
-
-            // if(agora-ultimaTroca>2000)
-            // {
-            //     estado=PARADO2;
-            //     ultimaTroca=agora;
-            // }
-
-        break;
-
-        case PARADO2:
-
-            pararMotores();
-            msg_states.data = 0;
-
-            // if(agora-ultimaTroca>1000)
-            // {
-            //     estado=FRENTE;
-            //     ultimaTroca=agora;
-            // }
-
-        break;
+        case aguardandoPeca:
+        //nesta etapa a esteira está parada , e aguarda a chegada de 
+        //uma peça , quando o sensor entra em  nivel alto , ele transiciona 
+        //de estado
+            if(msg->data == 0) estado = movendoMeio;
+            break;
+        case movendoMeio:
+        // 
+            if(msg->data == 1) estado = movendoFim;
+            break;
+        case movendoFim:
+            if(msg->data == -1) estado = paraEsteira;
+            break;
+        case paraEsteira:
+            if(msg->data == 0) estado = processaUr;
+            break;
+        case processaUr:
+            if(msg->data == 2) estado = aguardandoPeca;
+            break;
     }
-
-    RCSOFTCHECK(rcl_publish(&pub_states,&msg_states,NULL));
 }
+void timer_states_callback(rcl_timer_t *timer, int64_t last_call_time)
+{
+    RCLC_UNUSED(last_call_time);
+    if(timer == NULL) return;
 
+    msg_states.data = (int32_t)estado;
+    RCSOFTCHECK(rcl_publish(&pub_states, &msg_states, NULL));
+}
 //=========================
 // Timer velocidade
 //=========================
@@ -238,19 +182,7 @@ void timer_vel_callback(rcl_timer_t *timer, int64_t last_call_time)
 }
 
 
-// void timer_pos_callback(rcl_timer_t *timer, int64_t last_call_time)
-// {
 
-//     RCLC_UNUSED(last_call_time);
-
-//     if(timer==NULL)
-//         return;
-
-//     msg_vel.data = velocidade;
-
-//     RCSOFTCHECK(rcl_publish(&pub_vel,&msg_vel,NULL));
-
-// }
 //=========================
 // Setup
 //=========================
@@ -265,13 +197,7 @@ void setup()
 
     delay(2000);
 
-    pinMode(IN1,OUTPUT);
-    pinMode(IN2,OUTPUT);
-    pinMode(IN3,OUTPUT);
-    pinMode(IN4,OUTPUT);
 
-    ledcSetup(PWM_CHANNEL,PWM_FREQ,PWM_RESOLUTION);
-    ledcAttachPin(ENA,PWM_CHANNEL);
 
     static micro_ros_agent_locator locator;
 
@@ -302,18 +228,32 @@ void setup()
         "esp32_node",
         "",
         &support));
+    RCCHECK(rclc_executor_add_subscription(
+    &executor,
+    &subscriber,
+    &msg_sub,
+    &subscription_callback,
+    ON_NEW_DATA));
+
+    // create subscriber
+    // const int32 topic_name_machine_state = "aguardandoPeca";
+    RCCHECK(rclc_subscription_init_default(
+        &subscriber,
+        &node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
+        "esp32/state_machine"));
 
     RCCHECK(rclc_publisher_init_default(
         &pub_states,
         &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,Int32),
-        "esp32/motor_state"));
+        "esp32/state_machine"));
 
     RCCHECK(rclc_publisher_init_default(
         &pub_vel,
         &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs,msg,Int32),
-        "esp32/robot_vel"));
+        "esp32/motor_vel"));
 
     RCCHECK(rclc_timer_init_default(
         &timer_states,
@@ -341,7 +281,7 @@ void setup()
         &executor,
         &timer_vel));
 
-    msg_.data = 0;
+    msg_states.data = 0;
     msg_vel.data = velocidade;
 
     // ultimaTroca = millis();
